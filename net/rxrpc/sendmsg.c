@@ -322,9 +322,7 @@ static int rxrpc_send_data(struct rxrpc_sock *rx,
 
 	copied = 0;
 	do {
-		/* Check to see if there's a ping ACK to reply to. */
-		if (call->ackr_reason == RXRPC_ACK_PING_RESPONSE)
-			rxrpc_send_ack_packet(call, false, NULL);
+		rxrpc_transmit_ack_packets(call->peer->local);
 
 		if (!skb) {
 			size_t remain, bufsize, chunk, offset;
