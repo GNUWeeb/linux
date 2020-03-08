@@ -50,6 +50,7 @@ TARGETS += ptrace
 TARGETS += openat2
 TARGETS += rseq
 TARGETS += rtc
+TARGETS += readfile
 TARGETS += seccomp
 TARGETS += sgx
 TARGETS += sigaltstack
