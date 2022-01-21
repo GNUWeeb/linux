@@ -91,6 +91,7 @@ static struct rxrpc_local *rxrpc_alloc_local(struct rxrpc_net *rxnet,
 		skb_queue_head_init(&local->event_queue);
 		INIT_LIST_HEAD(&local->tx_queue);
 		INIT_LIST_HEAD(&local->tx_re_queue);
+		INIT_LIST_HEAD(&local->zcopy_cleanup_queue);
 		local->client_bundles = RB_ROOT;
 		spin_lock_init(&local->client_bundles_lock);
 		spin_lock_init(&local->lock);
@@ -168,6 +169,9 @@ static int rxrpc_open_socket(struct rxrpc_local *local, struct net *net)
 
 		/* We want receive timestamps. */
 		sock_enable_timestamps(usk);
+
+		/* We want zero copy if we can get it */
+		sock_set_flag(usk, SOCK_ZEROCOPY);
 		break;
 
 	default:
@@ -417,6 +421,8 @@ static void rxrpc_local_destroyer(struct rxrpc_local *local)
 	 */
 	rxrpc_purge_queue(&local->reject_queue);
 	rxrpc_purge_queue(&local->event_queue);
+	local->zcopy_done_seq = local->zcopy_seq;
+	rxrpc_zcopy_cleanup(local);
 }
 
 /*
@@ -437,6 +443,10 @@ static void rxrpc_local_processor(struct work_struct *work)
 
 	do {
 		again = false;
+		if (!list_empty(&local->zcopy_cleanup_queue) &&
+		    rxrpc_zcopy_cleanup(local))
+			again = true;			
+
 		if (!__rxrpc_use_local(local)) {
 			rxrpc_local_destroyer(local);
 			break;
