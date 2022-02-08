@@ -28,9 +28,14 @@
 static inline void __monitor(const void *eax, unsigned long ecx,
 			     unsigned long edx)
 {
-	/* "monitor %eax, %ecx, %edx;" */
+	/*
+	 * "monitor %eax, %ecx, %edx;"
+	 * The "memory" clobber prevents reordering with a subsequent load
+	 * from *eax.
+	 */
 	asm volatile(".byte 0x0f, 0x01, 0xc8;"
-		     :: "a" (eax), "c" (ecx), "d"(edx));
+		     :: "a" (eax), "c" (ecx), "d"(edx)
+		     :  "memory");
 }
 
 static inline void __monitorx(const void *eax, unsigned long ecx,
@@ -38,7 +43,8 @@ static inline void __monitorx(const void *eax, unsigned long ecx,
 {
 	/* "monitorx %eax, %ecx, %edx;" */
 	asm volatile(".byte 0x0f, 0x01, 0xfa;"
-		     :: "a" (eax), "c" (ecx), "d"(edx));
+		     :: "a" (eax), "c" (ecx), "d"(edx)
+		     :  "memory");
 }
 
 static inline void __mwait(unsigned long eax, unsigned long ecx)
