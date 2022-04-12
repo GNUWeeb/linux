@@ -298,8 +298,6 @@ static int rxrpc_send_data(struct rxrpc_sock *rx,
 
 	copied = 0;
 	do {
-		rxrpc_transmit_ack_packets(call->peer->local);
-
 		if (!txb) {
 			size_t remain, bufsize, chunk, offset;
 

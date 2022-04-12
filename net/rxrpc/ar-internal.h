@@ -1015,7 +1015,6 @@ static inline struct rxrpc_net *rxrpc_net(struct net *net)
 /*
  * output.c
  */
-void rxrpc_transmit_ack_packets(struct rxrpc_local *);
 bool rxrpc_zcopy_cleanup(struct rxrpc_local *local);
 int rxrpc_send_abort_packet(struct rxrpc_call *);
 void rxrpc_reject_packets(struct rxrpc_local *);
