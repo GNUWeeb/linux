@@ -11,6 +11,9 @@
 #ifdef CONFIG_RFS_ACCEL
 #include <linux/cpu_rmap.h>
 #endif
+#ifdef CONFIG_NUMA
+#include <linux/sched/topology.h>
+#endif
 #include "mlx5_core.h"
 #include "lib/eq.h"
 #include "fpga/core.h"
@@ -806,13 +809,51 @@ static void comp_irqs_release(struct mlx5_core_dev *dev)
 	kfree(table->comp_irqs);
 }
 
+static void set_cpus_by_numa_distance(struct mlx5_core_dev *dev, int ncomp_eqs,
+				      u16 *cpus)
+{
+	int i;
+#ifdef CONFIG_NUMA
+	cpumask_var_t cpumask;
+	int first;
+
+	if (!zalloc_cpumask_var(&cpumask, GFP_KERNEL)) {
+		mlx5_core_err(dev, "zalloc_cpumask_var failed\n");
+		goto err;
+	}
+	cpumask_copy(cpumask, cpu_online_mask);
+
+	first = cpumask_local_spread(0, dev->priv.numa_node);
+
+	for (i = 0; i < ncomp_eqs; i++) {
+		int cpu;
+
+		cpu = sched_numa_find_closest(cpumask, first);
+		if (cpu >= nr_cpu_ids) {
+			mlx5_core_err(dev, "sched_numa_find_closest failed, cpu(%d) >= nr_cpu_ids(%d)\n",
+				      cpu, nr_cpu_ids);
+
+			free_cpumask_var(cpumask);
+			goto err;
+		}
+		cpus[i] = cpu;
+		cpumask_clear_cpu(cpu, cpumask);
+	}
+
+	free_cpumask_var(cpumask);
+	return;
+err:
+#endif
+	for (i = 0; i < ncomp_eqs; i++)
+		cpus[i] = cpumask_local_spread(i, dev->priv.numa_node);
+}
+
 static int comp_irqs_request(struct mlx5_core_dev *dev)
 {
 	struct mlx5_eq_table *table = dev->priv.eq_table;
 	int ncomp_eqs = table->num_comp_eqs;
 	u16 *cpus;
 	int ret;
-	int i;
 
 	ncomp_eqs = table->num_comp_eqs;
 	table->comp_irqs = kcalloc(ncomp_eqs, sizeof(*table->comp_irqs), GFP_KERNEL);
@@ -830,8 +871,7 @@ static int comp_irqs_request(struct mlx5_core_dev *dev)
 		ret = -ENOMEM;
 		goto free_irqs;
 	}
-	for (i = 0; i < ncomp_eqs; i++)
-		cpus[i] = cpumask_local_spread(i, dev->priv.numa_node);
+	set_cpus_by_numa_distance(dev, ncomp_eqs, cpus);
 	ret = mlx5_irqs_request_vectors(dev, cpus, ncomp_eqs, table->comp_irqs);
 	kfree(cpus);
 	if (ret < 0)
