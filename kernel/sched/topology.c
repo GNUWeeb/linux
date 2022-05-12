@@ -2066,6 +2066,7 @@ unlock:
 
 	return found;
 }
+EXPORT_SYMBOL(sched_numa_find_closest);
 
 #endif /* CONFIG_NUMA */
 
