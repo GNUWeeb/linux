@@ -6,6 +6,7 @@
 #include <linux/debugfs.h>
 #include <linux/kallsyms.h>
 #include <linux/memory.h>
+#include <linux/kprobes.h>
 #include <linux/moduleloader.h>
 #include <linux/set_memory.h>
 #include <linux/static_call.h>
@@ -484,6 +485,7 @@ fail:
 
 static __init noinline void callthunks_init(struct callthunk_sites *cs)
 {
+	unsigned long base, size;
 	int ret;
 
 	if (cpu_feature_enabled(X86_FEATURE_CALL_DEPTH)) {
@@ -502,6 +504,9 @@ static __init noinline void callthunks_init(struct callthunk_sites *cs)
 	if (WARN_ON_ONCE(ret))
 		return;
 
+	base = (unsigned long)builtin_layout.base;
+	size = builtin_layout.size;
+	kprobe_add_area_blacklist(base, base + size);
 	static_call_force_reinit();
 	thunks_initialized = true;
 }

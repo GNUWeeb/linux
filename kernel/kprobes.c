@@ -2439,40 +2439,38 @@ void dump_kprobe(struct kprobe *kp)
 }
 NOKPROBE_SYMBOL(dump_kprobe);
 
-int kprobe_add_ksym_blacklist(unsigned long entry)
+static int __kprobe_add_ksym_blacklist(unsigned long start, unsigned long end)
 {
 	struct kprobe_blacklist_entry *ent;
+
+	ent = kmalloc(sizeof(*ent), GFP_KERNEL);
+	if (!ent)
+		return -ENOMEM;
+	ent->start_addr = start;
+	ent->end_addr = end;
+	INIT_LIST_HEAD(&ent->list);
+	list_add_tail(&ent->list, &kprobe_blacklist);
+
+	return (int)(end - start);
+}
+
+int kprobe_add_ksym_blacklist(unsigned long entry)
+{
 	unsigned long offset = 0, size = 0;
 
 	if (!kernel_text_address(entry) ||
 	    !kallsyms_lookup_size_offset(entry, &size, &offset))
 		return -EINVAL;
 
-	ent = kmalloc(sizeof(*ent), GFP_KERNEL);
-	if (!ent)
-		return -ENOMEM;
-	ent->start_addr = entry;
-	ent->end_addr = entry + size;
-	INIT_LIST_HEAD(&ent->list);
-	list_add_tail(&ent->list, &kprobe_blacklist);
-
-	return (int)size;
+	return __kprobe_add_ksym_blacklist(entry, entry + size);
 }
 
 /* Add all symbols in given area into kprobe blacklist */
 int kprobe_add_area_blacklist(unsigned long start, unsigned long end)
 {
-	unsigned long entry;
-	int ret = 0;
+	int ret = __kprobe_add_ksym_blacklist(start, end);
 
-	for (entry = start; entry < end; entry += ret) {
-		ret = kprobe_add_ksym_blacklist(entry);
-		if (ret < 0)
-			return ret;
-		if (ret == 0)	/* In case of alias symbol */
-			ret = 1;
-	}
-	return 0;
+	return ret < 0 ? ret : 0;
 }
 
 /* Remove all symbols in given area from kprobe blacklist */
@@ -2578,6 +2576,14 @@ static void add_module_kprobe_blacklist(struct module *mod)
 		end = start + mod->noinstr_text_size;
 		kprobe_add_area_blacklist(start, end);
 	}
+
+#ifdef CONFIG_CALL_THUNKS
+	start = (unsigned long)mod->thunk_layout.base;
+	if (start) {
+		end = start + mod->thunk_layout.size;
+		kprobe_remove_area_blacklist(start, end);
+	}
+#endif
 }
 
 static void remove_module_kprobe_blacklist(struct module *mod)
@@ -2601,6 +2607,14 @@ static void remove_module_kprobe_blacklist(struct module *mod)
 		end = start + mod->noinstr_text_size;
 		kprobe_remove_area_blacklist(start, end);
 	}
+
+#ifdef CONFIG_CALL_THUNKS
+	start = (unsigned long)mod->thunk_layout.base;
+	if (start) {
+		end = start + mod->thunk_layout.size;
+		kprobe_remove_area_blacklist(start, end);
+	}
+#endif
 }
 
 /* Module notifier call back, checking kprobes on the module */
