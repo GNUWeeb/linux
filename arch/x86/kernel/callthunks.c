@@ -573,7 +573,7 @@ static bool is_module_callthunk(void *addr)
 	return ret;
 }
 
-static bool is_callthunk(void *addr)
+bool is_callthunk(void *addr)
 {
 	if (builtin_layout.base <= addr &&
 	    addr < builtin_layout.base + builtin_layout.size)
