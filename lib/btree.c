@@ -787,15 +787,21 @@ static int __init btree_module_init(void)
 	return 0;
 }
 
+#if IS_MODULE(CONFIG_BTREE)
 static void __exit btree_module_exit(void)
 {
 	kmem_cache_destroy(btree_cachep);
 }
 
-/* If core code starts using btree, initialization should happen even earlier */
 module_init(btree_module_init);
 module_exit(btree_module_exit);
 
 MODULE_AUTHOR("Joern Engel <joern@logfs.org>");
 MODULE_AUTHOR("Johannes Berg <johannes@sipsolutions.net>");
 MODULE_LICENSE("GPL");
+#else
+void __init btree_cache_init(void)
+{
+	BUG_ON(btree_module_init());
+}
+#endif

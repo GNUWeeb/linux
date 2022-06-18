@@ -75,6 +75,7 @@
 #include <linux/signal.h>
 #include <linux/idr.h>
 #include <linux/kgdb.h>
+#include <linux/btree.h>
 #include <linux/ftrace.h>
 #include <linux/async.h>
 #include <linux/shmem_fs.h>
@@ -1125,6 +1126,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	cgroup_init();
 	taskstats_init_early();
 	delayacct_init();
+	btree_cache_init();
 
 	poking_init();
 	check_bugs();

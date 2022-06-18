@@ -5,6 +5,12 @@
 #include <linux/kernel.h>
 #include <linux/mempool.h>
 
+#if IS_BUILTIN(CONFIG_BTREE)
+extern void btree_cache_init(void);
+#else
+static inline void btree_cache_init(void) {}
+#endif
+
 /**
  * DOC: B+Tree basics
  *
