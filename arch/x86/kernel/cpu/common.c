@@ -2004,6 +2004,11 @@ EXPORT_PER_CPU_SYMBOL(__preempt_count);
 
 DEFINE_PER_CPU(unsigned long, cpu_current_top_of_stack) = TOP_OF_INIT_STACK;
 
+#ifdef CONFIG_CALL_DEPTH_TRACKING
+DEFINE_PER_CPU(u64, __x86_call_depth);
+EXPORT_PER_CPU_SYMBOL_GPL(__x86_call_depth);
+#endif
+
 static void wrmsrl_cstar(unsigned long val)
 {
 	/*
