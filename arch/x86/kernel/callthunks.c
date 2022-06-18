@@ -340,6 +340,20 @@ static __init_or_module void callthunk_area_set_rx(struct thunk_mem_area *area)
 	area->tmem->is_rx = true;
 }
 
+static __init_or_module int callthunk_set_modname(struct module_layout *layout)
+{
+#ifdef CONFIG_MODULES
+	struct module *mod = layout->mtn.mod;
+
+	if (mod) {
+		mod->callthunk_name = kasprintf(GFP_KERNEL, "callthunk:%s", mod->name);
+		if (!mod->callthunk_name)
+			return -ENOMEM;
+	}
+#endif
+	return 0;
+}
+
 static __init_or_module int callthunks_setup(struct callthunk_sites *cs,
 					     struct module_layout *layout)
 {
@@ -415,6 +429,10 @@ static __init_or_module int callthunks_setup(struct callthunk_sites *cs,
 		callthunk_area_set_rx(area);
 	sync_core();
 
+	ret = callthunk_set_modname(layout);
+	if (ret)
+		goto fail;
+
 	layout->base = thunk;
 	layout->size = text_size;
 	layout->text_size = text_size;
@@ -468,3 +486,34 @@ void __init callthunks_patch_builtin_calls(void)
 	callthunks_init(&cs);
 	mutex_unlock(&text_mutex);
 }
+
+#ifdef CONFIG_MODULES
+void noinline callthunks_patch_module_calls(struct callthunk_sites *cs,
+					    struct module *mod)
+{
+	struct module_layout *layout = &mod->thunk_layout;
+
+	if (!thunks_initialized)
+		return;
+
+	layout->mtn.mod = mod;
+	mutex_lock(&text_mutex);
+	WARN_ON_ONCE(callthunks_setup(cs, layout));
+	mutex_unlock(&text_mutex);
+}
+
+void callthunks_module_free(struct module *mod)
+{
+	struct module_layout *layout = &mod->thunk_layout;
+	struct thunk_mem_area *area = layout->arch_data;
+
+	if (!thunks_initialized || !area)
+		return;
+
+	prdbg("Free %s\n", layout_getname(layout));
+	layout->arch_data = NULL;
+	mutex_lock(&text_mutex);
+	callthunk_free(area, true);
+	mutex_unlock(&text_mutex);
+}
+#endif /* CONFIG_MODULES */

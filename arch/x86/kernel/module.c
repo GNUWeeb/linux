@@ -196,7 +196,8 @@ int module_finalize(const Elf_Ehdr *hdr,
 {
 	const Elf_Shdr *s, *text = NULL, *alt = NULL, *locks = NULL,
 		*para = NULL, *orc = NULL, *orc_ip = NULL,
-		*retpolines = NULL, *returns = NULL, *ibt_endbr = NULL;
+		*retpolines = NULL, *returns = NULL, *ibt_endbr = NULL,
+		*syms = NULL, *calls = NULL;
 	char *secstrings = (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
 
 	for (s = sechdrs; s < sechdrs + hdr->e_shnum; s++) {
@@ -216,6 +217,10 @@ int module_finalize(const Elf_Ehdr *hdr,
 			retpolines = s;
 		if (!strcmp(".return_sites", secstrings + s->sh_name))
 			returns = s;
+		if (!strcmp(".sym_sites", secstrings + s->sh_name))
+			syms = s;
+		if (!strcmp(".call_sites", secstrings + s->sh_name))
+			calls = s;
 		if (!strcmp(".ibt_endbr_seal", secstrings + s->sh_name))
 			ibt_endbr = s;
 	}
@@ -241,10 +246,31 @@ int module_finalize(const Elf_Ehdr *hdr,
 		void *aseg = (void *)alt->sh_addr;
 		apply_alternatives(aseg, aseg + alt->sh_size);
 	}
+	if (calls || syms || para) {
+		struct callthunk_sites cs = {};
+
+		if (syms) {
+			cs.syms_start = (void *)syms->sh_addr;
+			cs.syms_end = (void *)syms->sh_addr + syms->sh_size;
+		}
+
+		if (calls) {
+			cs.call_start = (void *)calls->sh_addr;
+			cs.call_end = (void *)calls->sh_addr + calls->sh_size;
+		}
+
+		if (para) {
+			cs.pv_start = (void *)para->sh_addr;
+			cs.pv_end = (void *)para->sh_addr + para->sh_size;
+		}
+
+		callthunks_patch_module_calls(&cs, me);
+	}
 	if (ibt_endbr) {
 		void *iseg = (void *)ibt_endbr->sh_addr;
 		apply_ibt_endbr(iseg, iseg + ibt_endbr->sh_size);
 	}
+
 	if (locks && text) {
 		void *lseg = (void *)locks->sh_addr;
 		void *tseg = (void *)text->sh_addr;
@@ -266,4 +292,5 @@ int module_finalize(const Elf_Ehdr *hdr,
 void module_arch_cleanup(struct module *mod)
 {
 	alternatives_smp_module_del(mod);
+	callthunks_module_free(mod);
 }
