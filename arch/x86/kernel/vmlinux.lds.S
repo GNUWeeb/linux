@@ -297,6 +297,13 @@ SECTIONS
 		*(.call_sites)
 		__call_sites_end = .;
 	}
+
+	. = ALIGN(8);
+	.sym_sites : AT(ADDR(.sym_sites) - LOAD_OFFSET) {
+		__sym_sites = .;
+		*(.sym_sites)
+		__sym_sites_end = .;
+	}
 #endif
 
 #ifdef CONFIG_X86_KERNEL_IBT

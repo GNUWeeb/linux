@@ -941,6 +941,56 @@ static int create_direct_call_sections(struct objtool_file *file)
 	return 0;
 }
 
+static int create_sym_thunk_sections(struct objtool_file *file)
+{
+	struct section *sec, *s;
+	struct symbol *sym;
+	unsigned int *loc;
+	int idx;
+
+	sec = find_section_by_name(file->elf, ".sym_sites");
+	if (sec) {
+		INIT_LIST_HEAD(&file->call_list);
+		WARN("file already has .sym_sites section, skipping");
+		return 0;
+	}
+
+	idx = 0;
+	for_each_sec(file, s) {
+		if (!s->text || s->init)
+			continue;
+
+		list_for_each_entry(sym, &s->symbol_list, list)
+			idx++;
+	}
+
+	sec = elf_create_section(file->elf, ".sym_sites", 0, sizeof(unsigned int), idx);
+	if (!sec)
+		return -1;
+
+	idx = 0;
+	for_each_sec(file, s) {
+		if (!s->text || s->init)
+			continue;
+
+		list_for_each_entry(sym, &s->symbol_list, list) {
+
+			loc = (unsigned int *)sec->data->d_buf + idx;
+			memset(loc, 0, sizeof(unsigned int));
+
+			if (elf_add_reloc_to_insn(file->elf, sec,
+						idx * sizeof(unsigned int),
+						R_X86_64_PC32,
+						s, sym->offset))
+				return -1;
+
+			idx++;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * Warnings shouldn't be reported for ignored functions.
  */
@@ -4322,6 +4372,11 @@ int check(struct objtool_file *file)
 		warnings += ret;
 
 		ret = create_direct_call_sections(file);
+		if (ret < 0)
+			goto out;
+		warnings += ret;
+
+		ret = create_sym_thunk_sections(file);
 		if (ret < 0)
 			goto out;
 		warnings += ret;
