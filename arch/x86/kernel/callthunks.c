@@ -716,6 +716,25 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_BPF_JIT
+int x86_call_depth_emit_accounting(u8 **pprog, void *func)
+{
+	unsigned int tmpl_size = callthunk_desc.template_size;
+	void *tmpl = callthunk_desc.template;
+
+	if (!thunks_initialized)
+		return 0;
+
+	/* Is function call target a thunk? */
+	if (is_callthunk(func))
+		return 0;
+
+	memcpy(*pprog, tmpl, tmpl_size);
+	*pprog += tmpl_size;
+	return tmpl_size;
+}
+#endif
+
 #ifdef CONFIG_MODULES
 void noinline callthunks_patch_module_calls(struct callthunk_sites *cs,
 					    struct module *mod)
