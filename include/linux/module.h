@@ -424,6 +424,9 @@ struct module {
 	/* Core layout: rbtree is accessed frequently, so keep together. */
 	struct module_layout core_layout __module_layout_align;
 	struct module_layout init_layout;
+#ifdef CONFIG_CALL_THUNKS
+	struct module_layout thunk_layout;
+#endif
 #ifdef CONFIG_ARCH_WANTS_MODULES_DATA_IN_VMALLOC
 	struct module_layout data_layout;
 #endif
@@ -590,9 +593,23 @@ static inline bool within_module_init(unsigned long addr,
 	       addr < (unsigned long)mod->init_layout.base + mod->init_layout.size;
 }
 
-static inline bool within_module(unsigned long addr, const struct module *mod)
+static inline bool within_module_thunk(unsigned long addr,
+				       const struct module *mod)
 {
-	return within_module_init(addr, mod) || within_module_core(addr, mod);
+#ifdef CONFIG_CALL_THUNKS
+	return (unsigned long)mod->thunk_layout.base <= addr &&
+	       addr < (unsigned long)mod->thunk_layout.base + mod->thunk_layout.size;
+#else
+	return false;
+#endif
+}
+
+static inline bool within_module(unsigned long addr,
+				 const struct module *mod)
+{
+	return within_module_core(addr, mod)  ||
+	       within_module_thunk(addr, mod) ||
+	       within_module_init(addr, mod);
 }
 
 /* Search for module by name: must be in a RCU-sched critical section. */

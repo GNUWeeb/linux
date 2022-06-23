@@ -66,10 +66,25 @@ static noinline void __mod_tree_insert(struct mod_tree_node *node, struct mod_tr
 	latch_tree_insert(&node->node, &tree->root, &mod_tree_ops);
 }
 
-static void __mod_tree_remove(struct mod_tree_node *node, struct mod_tree_root *tree)
+static noinline void __mod_tree_remove(struct mod_tree_node *node, struct mod_tree_root *tree)
 {
 	latch_tree_erase(&node->node, &tree->root, &mod_tree_ops);
 }
+
+#ifdef CONFIG_CALL_THUNKS
+void mod_tree_insert_thunk(struct module *mod)
+{
+	mod->thunk_layout.mtn.mod = mod;
+	if (mod->thunk_layout.size)
+		__mod_tree_insert(&mod->thunk_layout.mtn, &mod_tree);
+}
+
+void mod_tree_remove_thunk(struct module *mod)
+{
+	if (mod->thunk_layout.size)
+		__mod_tree_remove(&mod->thunk_layout.mtn, &mod_tree);
+}
+#endif
 
 /*
  * These modifications: insert, remove_init and remove; are serialized by the

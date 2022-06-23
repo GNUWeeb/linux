@@ -1154,6 +1154,7 @@ static void free_module(struct module *mod)
 	 */
 	mutex_lock(&module_mutex);
 	mod->state = MODULE_STATE_UNFORMED;
+	mod_tree_remove_thunk(mod);
 	mutex_unlock(&module_mutex);
 
 	/* Remove dynamic debug info */
@@ -2770,6 +2771,10 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	if (err < 0)
 		goto free_modinfo;
 
+	mutex_lock(&module_mutex);
+	mod_tree_insert_thunk(mod);
+	mutex_unlock(&module_mutex);
+
 	flush_module_icache(mod);
 
 	/* Setup CFI for the module. */
@@ -2859,6 +2864,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	mutex_lock(&module_mutex);
 	/* Unlink carefully: kallsyms could be walking list. */
 	list_del_rcu(&mod->list);
+	mod_tree_remove_thunk(mod);
 	mod_tree_remove(mod);
 	wake_up_all(&module_wq);
 	/* Wait for RCU-sched synchronizing before releasing mod->list. */

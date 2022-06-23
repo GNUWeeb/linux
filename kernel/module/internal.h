@@ -219,6 +219,14 @@ static inline struct module *mod_find(unsigned long addr, struct mod_tree_root *
 }
 #endif /* CONFIG_MODULES_TREE_LOOKUP */
 
+#if defined(CONFIG_MODULES_TREE_LOOKUP) && defined(CONFIG_CALL_THUNKS)
+void mod_tree_insert_thunk(struct module *mod);
+void mod_tree_remove_thunk(struct module *mod);
+#else
+static inline void mod_tree_insert_thunk(struct module *mod) { }
+static inline void mod_tree_remove_thunk(struct module *mod) { }
+#endif
+
 void module_enable_ro(const struct module *mod, bool after_init);
 void module_enable_nx(const struct module *mod);
 void module_enable_x(const struct module *mod);
