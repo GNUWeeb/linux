@@ -2241,6 +2241,9 @@ config RANDOMIZE_MEMORY_PHYSICAL_PADDING
 
 	  If unsure, leave at the default value.
 
+config MODULE_ALLOC
+	def_bool MODULES
+
 config HOTPLUG_CPU
 	def_bool y
 	depends on SMP
