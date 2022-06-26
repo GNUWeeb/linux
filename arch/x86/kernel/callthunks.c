@@ -54,6 +54,24 @@ struct thunk_desc {
 
 static struct thunk_desc callthunk_desc __ro_after_init;
 
+asm (
+	".pushsection .rodata				\n"
+	".global skl_call_thunk_template		\n"
+	"skl_call_thunk_template:			\n"
+		__stringify(INCREMENT_CALL_DEPTH)"	\n"
+	".global skl_call_thunk_tail			\n"
+	"skl_call_thunk_tail:				\n"
+	".popsection					\n"
+);
+
+extern u8 skl_call_thunk_template[];
+extern u8 skl_call_thunk_tail[];
+
+#define SKL_TMPL_SIZE \
+	((unsigned int)(skl_call_thunk_tail - skl_call_thunk_template))
+#define SKL_CALLTHUNK_CODE_SIZE	(SKL_TMPL_SIZE + JMP32_INSN_SIZE + INT3_INSN_SIZE)
+#define SKL_CALLTHUNK_SIZE	roundup_pow_of_two(SKL_CALLTHUNK_CODE_SIZE)
+
 struct thunk_mem {
 	void			*base;
 	unsigned int		size;
@@ -457,6 +475,12 @@ fail:
 static __init noinline void callthunks_init(struct callthunk_sites *cs)
 {
 	int ret;
+
+	if (cpu_feature_enabled(X86_FEATURE_CALL_DEPTH)) {
+		callthunk_desc.template = skl_call_thunk_template;
+		callthunk_desc.template_size = SKL_TMPL_SIZE;
+		callthunk_desc.thunk_size = SKL_CALLTHUNK_SIZE;
+	}
 
 	if (!callthunk_desc.template)
 		return;
