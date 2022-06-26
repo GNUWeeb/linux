@@ -67,6 +67,28 @@ struct module_version_attribute {
 	const char *version;
 };
 
+struct mod_tree_node {
+	struct module *mod;
+	struct latch_tree_node node;
+};
+
+struct module_layout {
+	/* The actual code + data. */
+	void *base;
+	/* Total size. */
+	unsigned int size;
+	/* The size of the executable code.  */
+	unsigned int text_size;
+	/* Size of RO section of the module (text+rodata) */
+	unsigned int ro_size;
+	/* Size of RO after init section */
+	unsigned int ro_after_init_size;
+
+#ifdef CONFIG_MODULES_TREE_LOOKUP
+	struct mod_tree_node mtn;
+#endif
+};
+
 extern ssize_t __modver_version_show(struct module_attribute *,
 				     struct module_kobject *, char *);
 
@@ -314,28 +336,6 @@ enum module_state {
 	MODULE_STATE_COMING,	/* Full formed, running module_init. */
 	MODULE_STATE_GOING,	/* Going away. */
 	MODULE_STATE_UNFORMED,	/* Still setting it up. */
-};
-
-struct mod_tree_node {
-	struct module *mod;
-	struct latch_tree_node node;
-};
-
-struct module_layout {
-	/* The actual code + data. */
-	void *base;
-	/* Total size. */
-	unsigned int size;
-	/* The size of the executable code.  */
-	unsigned int text_size;
-	/* Size of RO section of the module (text+rodata) */
-	unsigned int ro_size;
-	/* Size of RO after init section */
-	unsigned int ro_after_init_size;
-
-#ifdef CONFIG_MODULES_TREE_LOOKUP
-	struct mod_tree_node mtn;
-#endif
 };
 
 #ifdef CONFIG_MODULES_TREE_LOOKUP
