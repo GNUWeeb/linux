@@ -453,6 +453,9 @@ static void rxrpc_input_data(struct rxrpc_call *call, struct sk_buff *skb)
 	    !rxrpc_receiving_reply(call))
 		goto unlock;
 
+	if (!call->rx_data_tstamp)
+		call->rx_data_tstamp = skb_get_ktime(skb);
+
 	hard_ack = READ_ONCE(call->rx_hard_ack);
 
 	nr_subpackets = sp->nr_subpackets;

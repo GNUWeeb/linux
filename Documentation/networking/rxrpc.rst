@@ -1055,16 +1055,15 @@ The kernel interface functions are as follows:
      first function to change.  Note that this must be called in TASK_RUNNING
      state.
 
- (#) Get reply timestamp::
+ (#) Get the timestamp of the first DATA packet received::
 
-	bool rxrpc_kernel_get_reply_time(struct socket *sock,
-					 struct rxrpc_call *call,
-					 ktime_t *_ts)
+	bool rxrpc_kernel_get_rx_timestamp(struct socket *sock,
+					   struct rxrpc_call *call,
+					   ktime_t *_ts)
 
-     This allows the timestamp on the first DATA packet of the reply of a
-     client call to be queried, provided that it is still in the Rx ring.  If
-     successful, the timestamp will be stored into ``*_ts`` and true will be
-     returned; false will be returned otherwise.
+     This allows the timestamp on the first DATA packet received on a call to
+     be queried.  If successful, the timestamp will be stored into ``*_ts`` and
+     true will be returned; false will be returned otherwise.
 
  (#) Get remote client epoch::
 

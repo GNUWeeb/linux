@@ -497,11 +497,11 @@ static void afs_deliver_to_call(struct afs_call *call)
 			return;
 		}
 
-		if (!call->have_reply_time &&
-		    rxrpc_kernel_get_reply_time(call->net->socket,
-						call->rxcall,
-						&call->reply_time))
-			call->have_reply_time = true;
+		if (!call->have_rx_timestamp &&
+		    rxrpc_kernel_get_rx_timestamp(call->net->socket,
+						  call->rxcall,
+						  &call->rx_timestamp))
+			call->have_rx_timestamp = true;
 
 		ret = call->type->deliver(call);
 		state = READ_ONCE(call->state);

@@ -639,8 +639,12 @@ struct rxrpc_call {
 	rxrpc_seq_t		tx_hard_ack;	/* Dead slot in buffer; the first transmitted but
 						 * not hard-ACK'd packet follows this.
 						 */
+	/* Transmitted data tracking. */
 	rxrpc_seq_t		tx_top;		/* Highest Tx slot allocated. */
 	u16			tx_backoff;	/* Delay to insert due to Tx failure */
+
+	/* Received data tracking */
+	ktime_t			rx_data_tstamp;	/* Timestamp of first DATA packet received */
 
 	/* TCP-style slow-start congestion control [RFC5681].  Since the SMSS
 	 * is fixed, we keep these numbers in terms of segments (ie. DATA
