@@ -87,6 +87,9 @@ struct module_layout {
 #ifdef CONFIG_MODULES_TREE_LOOKUP
 	struct mod_tree_node mtn;
 #endif
+#ifdef CONFIG_CALL_THUNKS
+	void *arch_data;
+#endif
 };
 
 extern ssize_t __modver_version_show(struct module_attribute *,
