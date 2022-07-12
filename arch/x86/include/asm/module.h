@@ -13,4 +13,6 @@ struct mod_arch_specific {
 #endif
 };
 
+extern void *__module_alloc(unsigned long size, unsigned long vmflags);
+
 #endif /* _ASM_X86_MODULE_H */

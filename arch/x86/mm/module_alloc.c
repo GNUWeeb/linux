@@ -39,7 +39,7 @@ static unsigned long int get_module_load_offset(void)
 }
 #endif
 
-void *module_alloc(unsigned long size)
+void *__module_alloc(unsigned long size, unsigned long vmflags)
 {
 	gfp_t gfp_mask = GFP_KERNEL;
 	void *p;
@@ -47,10 +47,11 @@ void *module_alloc(unsigned long size)
 	if (PAGE_ALIGN(size) > MODULES_LEN)
 		return NULL;
 
+	vmflags |= VM_FLUSH_RESET_PERMS | VM_DEFER_KMEMLEAK;
 	p = __vmalloc_node_range(size, MODULE_ALIGN,
 				 MODULES_VADDR + get_module_load_offset(),
 				 MODULES_END, gfp_mask, PAGE_KERNEL,
-				 VM_FLUSH_RESET_PERMS | VM_DEFER_KMEMLEAK,
+				 vmflags,
 				 NUMA_NO_NODE, __builtin_return_address(0));
 
 	if (p && (kasan_alloc_module_shadow(p, size, gfp_mask) < 0)) {
@@ -59,4 +60,9 @@ void *module_alloc(unsigned long size)
 	}
 
 	return p;
+}
+
+void *module_alloc(unsigned long size)
+{
+	return __module_alloc(size, 0);
 }
