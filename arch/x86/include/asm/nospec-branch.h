@@ -77,6 +77,23 @@
  */
 
 #ifdef CONFIG_CALL_DEPTH_TRACKING
+
+#ifdef CONFIG_CALL_THUNKS_DEBUG
+# define CALL_THUNKS_DEBUG_INC_CALLS				\
+	incq	%gs:__x86_call_count;
+# define CALL_THUNKS_DEBUG_INC_RETS				\
+	incq	%gs:__x86_ret_count;
+# define CALL_THUNKS_DEBUG_INC_STUFFS				\
+	incq	%gs:__x86_stuffs_count;
+# define CALL_THUNKS_DEBUG_INC_CTXSW				\
+	incq	%gs:__x86_ctxsw_count;
+#else
+# define CALL_THUNKS_DEBUG_INC_CALLS
+# define CALL_THUNKS_DEBUG_INC_RETS
+# define CALL_THUNKS_DEBUG_INC_STUFFS
+# define CALL_THUNKS_DEBUG_INC_CTXSW
+#endif
+
 #define CREDIT_CALL_DEPTH					\
 	movq	$-1, PER_CPU_VAR(__x86_call_depth);
 
@@ -88,10 +105,12 @@
 #define RESET_CALL_DEPTH_FROM_CALL				\
 	mov	$0xfc, %rax;					\
 	shl	$56, %rax;					\
-	movq	%rax, PER_CPU_VAR(__x86_call_depth);
+	movq	%rax, PER_CPU_VAR(__x86_call_depth);		\
+	CALL_THUNKS_DEBUG_INC_CALLS
 
 #define INCREMENT_CALL_DEPTH					\
-	sarq	$5, %gs:__x86_call_depth
+	sarq	$5, %gs:__x86_call_depth;			\
+	CALL_THUNKS_DEBUG_INC_CALLS
 #else
 #define CREDIT_CALL_DEPTH
 #define RESET_CALL_DEPTH
@@ -127,7 +146,8 @@
 	dec	reg;				\
 	jnz	771b;				\
 						\
-	CREDIT_CALL_DEPTH
+	CREDIT_CALL_DEPTH			\
+	CALL_THUNKS_DEBUG_INC_CTXSW
 
 #ifdef __ASSEMBLY__
 
@@ -274,6 +294,12 @@ static inline void x86_set_skl_return_thunk(void)
 }
 
 DECLARE_PER_CPU(u64, __x86_call_depth);
+#ifdef CONFIG_CALL_THUNKS_DEBUG
+DECLARE_PER_CPU(u64, __x86_call_count);
+DECLARE_PER_CPU(u64, __x86_ret_count);
+DECLARE_PER_CPU(u64, __x86_stuffs_count);
+DECLARE_PER_CPU(u64, __x86_ctxsw_count);
+#endif
 #else
 static inline void x86_set_skl_return_thunk(void) {}
 #endif
