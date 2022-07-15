@@ -94,8 +94,10 @@ struct thunk_mem {
 
 struct thunk_mem_area {
 	struct thunk_mem	*tmem;
+	unsigned long		*dests;
 	unsigned long		start;
 	unsigned long		nthunks;
+	bool			padonly;
 };
 
 static LIST_HEAD(thunk_mem_list);
@@ -192,6 +194,19 @@ static __init_or_module void callthunk_free(struct thunk_mem_area *area,
 	      tmem->base + area->start * callthunk_desc.thunk_size,
 	      area->start, area->nthunks);
 
+	/* Remove thunks in the padding area */
+	for (i = 0; area->dests && i < area->nthunks; i++) {
+		void *dest = (void *)area->dests[i];
+
+		if (!dest)
+			continue;
+		prdbg("Remove %px at index %u\n", dest, i);
+		btree_remove64(&call_thunks, (unsigned long)dest);
+	}
+
+	if (area->padonly)
+		goto free;
+
 	/* Jump starts right after the template */
 	thunk = tmem->base + area->start * callthunk_desc.thunk_size;
 	tp = thunk + callthunk_desc.template_size;
@@ -215,6 +230,8 @@ static __init_or_module void callthunk_free(struct thunk_mem_area *area,
 		size = area->nthunks * callthunk_desc.thunk_size;
 		text_poke_set_locked(thunk, 0xcc, size);
 	}
+free:
+	vfree(area->dests);
 	kfree(area);
 }
 
@@ -236,6 +253,7 @@ int callthunk_setup_one(void *dest, u8 *thunk, u8 *buffer,
 		return 0;
 	}
 
+	prdbg("External thunk for dest: %pS %px at %px\n", dest, dest, thunk);
 	memcpy(buffer, callthunk_desc.template, callthunk_desc.template_size);
 	jmp = thunk + callthunk_desc.template_size;
 	buffer += callthunk_desc.template_size;
@@ -270,12 +288,15 @@ static __init_or_module void patch_call(void *addr, struct module_layout *layout
 	thunk = btree_lookup64(&call_thunks, key);
 
 	if (!thunk) {
-		WARN_ONCE(!is_inittext(layout, dest),
-			  "Lookup %s thunk for %pS -> %pS %016lx failed\n",
-			  layout_getname(layout), addr, dest, key);
+		if (!is_inittext(layout, dest)) {
+			pr_warn("Lookup %s thunk for %pS -> %pS %016lx failed\n",
+				layout_getname(layout), addr, dest, key);
+		}
 		return;
 	}
 
+	prdbg("Patch call at: %pS %px to %pS %px -> %px \n", addr, addr,
+		dest, dest, thunk);
 	__text_gen_insn(bytes, CALL_INSN_OPCODE, addr, thunk, CALL_INSN_SIZE);
 	text_poke_early(addr, bytes, CALL_INSN_SIZE);
 }
@@ -300,7 +321,8 @@ patch_paravirt_call_sites(struct paravirt_patch_site *start,
 		patch_call(p->instr, layout);
 }
 
-static struct thunk_mem_area *callthunks_alloc(unsigned int nthunks)
+static struct thunk_mem_area *callthunks_alloc(unsigned int nthunks,
+					       bool module)
 {
 	struct thunk_mem_area *area;
 	unsigned int size, mapsize;
@@ -309,6 +331,13 @@ static struct thunk_mem_area *callthunks_alloc(unsigned int nthunks)
 	area = kzalloc(sizeof(*area), GFP_KERNEL);
 	if (!area)
 		return NULL;
+
+	if (module) {
+		area->dests = vzalloc(nthunks * sizeof(unsigned long));
+		if (!area->dests)
+			goto free_area;
+		prdbg("Allocated dests array: %px\n", area->dests);
+	}
 
 	list_for_each_entry(tmem, &thunk_mem_list, list) {
 		unsigned long start;
@@ -351,6 +380,7 @@ static struct thunk_mem_area *callthunks_alloc(unsigned int nthunks)
 free_tmem:
 	kfree(tmem);
 free_area:
+	vfree(area->dests);
 	kfree(area);
 	return NULL;
 }
@@ -383,6 +413,96 @@ static __init_or_module int callthunk_set_modname(struct module_layout *layout)
 	return 0;
 }
 
+int setup_padding_thunks(s32 *start, s32 *end, struct thunk_mem_area *area,
+			 struct module_layout *layout)
+{
+	int gap, nthunks = 0, idx = 0, padsize;
+	s32 *s;
+
+	padsize = 1 << CONFIG_FUNCTION_PADDING_ORDER;
+	if (callthunk_desc.template_size > padsize)
+		return 0;
+
+	gap = padsize - callthunk_desc.template_size;
+
+	for (s = start; s < end; s++) {
+		void *thunk, *tp, *dest = (void *)s + *s;
+		unsigned long key = (unsigned long)dest;
+		int fail, i;
+		u8 opcode;
+
+		if (is_inittext(layout, dest)) {
+			prdbg("Ignoring init dest: %pS %px\n", dest, dest);
+			continue;
+		}
+
+		/* Multiple symbols can have the same location. */
+		if (btree_lookup64(&call_thunks, key)) {
+			prdbg("Ignoring duplicate dest: %pS %px\n", dest, dest);
+			continue;
+		}
+
+		thunk = tp = dest - 16;
+		prdbg("Probing dest: %pS %px at %px\n", dest, dest, tp);
+		pagefault_disable();
+		fail = 0;
+		for (i = 0; !fail && i < 16; i++) {
+			if (get_kernel_nofault(opcode, tp + i)) {
+				fail = 1;
+			} else if (opcode != 0xcc) {
+				fail = 2;
+			}
+		}
+		pagefault_enable();
+		switch (fail) {
+		case 1:
+			prdbg("Faulted for dest: %pS %px\n", dest, dest);
+			nthunks++;
+			continue;
+		case 2:
+			prdbg("No padding for dest: %pS %px\n", dest, dest);
+			nthunks++;
+			continue;
+		}
+
+		prdbg("Thunk for dest: %pS %px at %px\n", dest, dest, tp);
+		memcpy(tp, callthunk_desc.template, callthunk_desc.template_size);
+		tp += callthunk_desc.template_size;
+
+		switch (gap) {
+		case 0: break;
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+			memcpy(tp, x86_nops[gap], gap);
+			break;
+		default:
+			__text_gen_insn(tp, JMP32_INSN_OPCODE, tp, dest,
+					JMP32_INSN_SIZE);
+			tp += JMP32_INSN_SIZE;
+			*(u8*)tp = 0xcc;
+			break;
+		}
+
+		if (area->dests) {
+			prdbg("Insert %px at index %d\n", dest, idx);
+			area->dests[idx++] = key;
+		}
+
+		fail = btree_insert64(&call_thunks, key, (void *)thunk, GFP_KERNEL);
+		if (fail)
+			return fail;
+
+		area->nthunks++;
+	}
+	return 0;
+}
+
 static __init_or_module int callthunks_setup(struct callthunk_sites *cs,
 					     struct module_layout *layout)
 {
@@ -405,7 +525,7 @@ static __init_or_module int callthunks_setup(struct callthunk_sites *cs,
 	if (!nthunks)
 		goto patch;
 
-	area = callthunks_alloc(nthunks);
+	area = callthunks_alloc(nthunks, !!layout->mtn.mod);
 	if (!area)
 		return -ENOMEM;
 
@@ -429,6 +549,17 @@ static __init_or_module int callthunks_setup(struct callthunk_sites *cs,
 		memset(vbuf, INT3_INSN_OPCODE, size);
 		buffer = vbuf;
 		prdbg("Using thunk vbuf %px\n", vbuf);
+	}
+
+	layout->arch_data = area;
+
+	if (IS_ENABLED(CONFIG_CALL_THUNKS_IN_PADDING)) {
+		ret = setup_padding_thunks(cs->syms_start, cs->syms_end,
+					   area, layout);
+		if (ret < 0)
+			goto fail;
+		area->padonly = true;
+		goto patch;
 	}
 
 	for (s = cs->syms_start; s < cs->syms_end; s++) {
@@ -465,7 +596,6 @@ static __init_or_module int callthunks_setup(struct callthunk_sites *cs,
 	layout->base = thunk;
 	layout->size = text_size;
 	layout->text_size = text_size;
-	layout->arch_data = area;
 
 	vfree(vbuf);
 
@@ -557,8 +687,9 @@ void *callthunks_translate_call_dest(void *dest)
 	if (thunk)
 		return thunk;
 
-	WARN_ON_ONCE(!is_kernel_inittext((unsigned long)dest) &&
-		     !is_module_init_dest(dest));
+	if (WARN_ON_ONCE(!is_kernel_inittext((unsigned long)dest) &&
+			 !is_module_init_dest(dest)))
+		prdbg("No thunk for %pS %px\n", dest, dest);
 	return dest;
 }
 
@@ -758,9 +889,9 @@ void callthunks_module_free(struct module *mod)
 	if (!thunks_initialized || !area)
 		return;
 
+	mutex_lock(&text_mutex);
 	prdbg("Free %s\n", layout_getname(layout));
 	layout->arch_data = NULL;
-	mutex_lock(&text_mutex);
 	callthunk_free(area, true);
 	mutex_unlock(&text_mutex);
 }
