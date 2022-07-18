@@ -690,6 +690,14 @@ struct ath11k {
 	struct list_head ppdu_stats_info;
 	u32 ppdu_stat_list_depth;
 
+	/* To protect wmi_ctrl_path_stats_list manipulation */
+	struct mutex wmi_ctrl_path_stats_lock;
+	struct list_head wmi_ctrl_path_stats_list;
+	struct completion wmi_ctrl_path_stats_rcvd;
+	u32 wmi_ctrl_path_stats_tagid;
+	u8 wmi_ctrl_path_stats_reqid;
+	bool wmi_ctrl_path_stats_more_enabled;
+
 	struct ath11k_per_peer_tx_stats cached_stats;
 	u32 last_ppdu_id;
 	u32 cached_ppdu_id;

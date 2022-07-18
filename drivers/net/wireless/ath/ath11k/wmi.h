@@ -448,6 +448,8 @@ enum wmi_tlv_cmd_id {
 	WMI_REQUEST_RCPI_CMDID,
 	WMI_REQUEST_PEER_STATS_INFO_CMDID,
 	WMI_REQUEST_RADIO_CHAN_STATS_CMDID,
+	WMI_REQUEST_WLM_STATS_CMDID,
+	WMI_REQUEST_CTRL_PATH_STATS_CMDID,
 	WMI_SET_ARP_NS_OFFLOAD_CMDID = WMI_TLV_CMD(WMI_GRP_ARP_NS_OFL),
 	WMI_ADD_PROACTIVE_ARP_RSP_PATTERN_CMDID,
 	WMI_DEL_PROACTIVE_ARP_RSP_PATTERN_CMDID,
@@ -713,6 +715,8 @@ enum wmi_tlv_event_id {
 	WMI_UPDATE_RCPI_EVENTID,
 	WMI_PEER_STATS_INFO_EVENTID,
 	WMI_RADIO_CHAN_STATS_EVENTID,
+	WMI_WLM_STATS_EVENTID,
+	WMI_CTRL_PATH_STATS_EVENTID,
 	WMI_NLO_MATCH_EVENTID = WMI_TLV_CMD(WMI_GRP_NLO_OFL),
 	WMI_NLO_SCAN_COMPLETE_EVENTID,
 	WMI_APFIND_EVENTID,
@@ -1864,6 +1868,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD,
 	WMI_TAG_PDEV_NON_SRG_OBSS_COLOR_ENABLE_BITMAP_CMD,
 	WMI_TAG_PDEV_NON_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD,
+	WMI_TAG_CTRL_PATH_STATS_CMD_FIXED_PARAM = 0x388,
+	WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM,
+	WMI_TAG_CTRL_PATH_PDEV_STATS,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD,
 	WMI_TAG_MAX
@@ -2091,6 +2098,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_FREQINFO_IN_METADATA = 219,
 	WMI_TLV_SERVICE_EXT2_MSG = 220,
 	WMI_TLV_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT = 249,
+	WMI_TLV_REQUEST_CTRL_PATH_STATS_REQUEST = 250,
 
 	/* The second 128 bits */
 	WMI_MAX_EXT_SERVICE = 256,
@@ -4959,6 +4967,84 @@ struct wmi_twt_disable_params_cmd {
 	u32 pdev_id;
 } __packed;
 
+/**
+ * WMI arrays of length WMI_MGMT_FRAME_SUBTYPE_MAX use the
+ * IEEE802.11 standard's enumeration of mgmt frame subtypes:
+ *  0 -> IEEE80211_STYPE_ASSOC_REQ
+ *  1 -> IEEE80211_STYPE_ASSOC_RESP
+ *  2 -> IEEE80211_STYPE_REASSOC_REQ
+ *  3 -> IEEE80211_STYPE_REASSOC_RESP
+ *  4 -> IEEE80211_STYPE_PROBE_REQ
+ *  5 -> IEEE80211_STYPE_PROBE_RESP
+ *  6 -> Reserved
+ *  7 -> Reserved
+ *  8 -> IEEE80211_STYPE_BEACON
+ *  9 -> IEEE80211_STYPE_ATIM
+ * 10 -> IEEE80211_STYPE_DISASSOC
+ * 11 -> IEEE80211_STYPE_AUTH
+ * 12 -> IEEE80211_STYPE_DEAUTH
+ * 13 -> IEEE80211_STYPE_ACTION
+ * 14 -> IEEE80211_STYPE_ACTION_NOACK
+ * 15 -> IEEE80211_STYPE_RESERVED
+ */
+#define WMI_MGMT_FRAME_SUBTYPE_MAX 16
+
+struct wmi_ctrl_path_pdev_stats {
+	u32 req_id;
+	u32 pdev_id;
+	u32 tx_mgmt_subtype[WMI_MGMT_FRAME_SUBTYPE_MAX];
+	u32 rx_mgmt_subtype[WMI_MGMT_FRAME_SUBTYPE_MAX];
+	u32 scan_fail_dfs_violation_time_ms;
+	u32 nol_chk_fail_last_chan_freq;
+	u32 nol_chk_fail_time_stamp_ms;
+	u32 tot_peer_create_cnt;
+	u32 tot_peer_del_cnt;
+	u32 tot_peer_del_resp_cnt;
+	u32 vdev_pause_fail_rt;
+} __packed;
+
+struct  wmi_ctrl_path_stats_cmd_fixed_param {
+	u32 tlv_header;
+	/* refer enum  wmi_ctrl_path_stats_id */
+	u32 stats_id;
+	u32 req_id;
+	/* refer enum wmi_ctrl_path_stats_action */
+	u32 action;
+} __packed;
+
+struct wmi_ctrl_path_stats_event_fixed_param {
+	u32 req_id;
+	/* more flag
+	 * 1 - More events sent after this event.
+	 * 0 - no more events after this event.
+	 */
+	u32 more;
+} __packed;
+
+struct wmi_ctrl_path_stats_list_fmt {
+	struct list_head list;
+	void *stats_ptr;
+};
+
+struct wmi_ctrl_path_stats_event_parse_param {
+	struct list_head list;
+	struct ath11k *ar;
+	u32 req_id;
+};
+
+enum  wmi_ctrl_path_stats_id {
+	WMI_REQ_CTRL_PATH_PDEV_STAT   = 1,
+	WMI_REQ_CTRL_PATH_VDEV_EXTD_STAT = 2,
+	WMI_REQ_CTRL_PATH_MEM_STAT       = 3,
+};
+
+enum wmi_ctrl_path_stats_action {
+	WMI_REQ_CTRL_PATH_STAT_GET   = 1,
+	WMI_REQ_CTRL_PATH_STAT_RESET = 2,
+	WMI_REQ_CTRL_PATH_STAT_START = 3,
+	WMI_REQ_CTRL_PATH_STAT_STOP  = 4,
+};
+
 enum WMI_HOST_TWT_COMMAND {
 	WMI_HOST_TWT_COMMAND_REQUEST_TWT = 0,
 	WMI_HOST_TWT_COMMAND_SUGGEST_TWT,
@@ -5374,6 +5460,7 @@ struct wmi_debug_log_config_cmd_fixed_param {
 
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5 * HZ)
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
+#define WMI_CTRL_STATS_READY_TIMEOUT_HZ (1 * HZ)
 
 struct ath11k_wmi_base {
 	struct ath11k_base *ab;
@@ -6133,5 +6220,8 @@ int ath11k_wmi_pdev_set_bios_sar_table_param(struct ath11k *ar, const u8 *sar_va
 int ath11k_wmi_pdev_set_bios_geo_table_param(struct ath11k *ar);
 int ath11k_wmi_sta_keepalive(struct ath11k *ar,
 			     const struct wmi_sta_keepalive_arg *arg);
+int ath11k_wmi_send_wmi_ctrl_stats_cmd(struct ath11k *ar,
+				       struct wmi_ctrl_path_stats_cmd_fixed_param *param);
+void ath11k_wmi_ctrl_path_stats_list_free(struct ath11k *ar);
 
 #endif

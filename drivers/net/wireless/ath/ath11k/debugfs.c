@@ -1638,6 +1638,158 @@ static const struct file_operations ath11k_fops_twt_resume_dialog = {
 	.open = simple_open
 };
 
+static ssize_t ath11k_write_wmi_ctrl_path_stats(struct file *file,
+						const char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct wmi_ctrl_path_stats_cmd_fixed_param param = {0};
+	u8 buf[128] = {0};
+	int ret;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+
+	ret = sscanf(buf, "%u %u", &param.stats_id, &param.action);
+	if (ret != 2)
+		return -EINVAL;
+
+	if (!param.action || param.action > WMI_REQ_CTRL_PATH_STAT_RESET)
+		return -EINVAL;
+
+	ret = ath11k_wmi_send_wmi_ctrl_stats_cmd(arvif->ar, &param);
+	return ret ? ret : count;
+}
+
+#define WMI_MAX_STRING_LEN		256
+#define WMI_CTRL_PATH_STATS_REQID	0x1A
+#define WMI_CTRL_PATH_STATS_REQID_MAX	0xFF
+
+static int ath11k_read_wmi_ctrl_path_pdev_stats(struct ath11k_vif *arvif,
+						char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	const int size = 2048;
+	char *buf;
+	u8 i, index_tx, index_rx;
+	int len = 0, ret_val;
+	char fw_tx_mgmt_subtype[WMI_MAX_STRING_LEN] = {0};
+	char fw_rx_mgmt_subtype[WMI_MAX_STRING_LEN] = {0};
+	struct wmi_ctrl_path_stats_list_fmt *stats;
+	struct wmi_ctrl_path_pdev_stats *pdev_stats;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&arvif->ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry(stats, &arvif->ar->wmi_ctrl_path_stats_list, list) {
+		if (!stats)
+			break;
+
+		pdev_stats = stats->stats_ptr;
+		index_tx = 0;
+		index_rx = 0;
+
+		for (i = 0; i < WMI_MGMT_FRAME_SUBTYPE_MAX; i++) {
+			index_tx += scnprintf(&fw_tx_mgmt_subtype[index_tx],
+				WMI_MAX_STRING_LEN - index_tx,
+				" %u:%u,", i,
+				pdev_stats->tx_mgmt_subtype[i]);
+			index_rx += scnprintf(&fw_rx_mgmt_subtype[index_rx],
+				 WMI_MAX_STRING_LEN - index_rx,
+				 " %u:%u,", i,
+				 pdev_stats->rx_mgmt_subtype[i]);
+		}
+
+		len += scnprintf(buf + len, size - len,
+				 "WMI_CTRL_PATH_PDEV_STATS:\n");
+		len += scnprintf(buf + len, size - len,
+				 "req_id = %u\n", pdev_stats->req_id);
+		len += scnprintf(buf + len, size - len,
+				 "fw_tx_mgmt_subtype = %s\n",
+				 fw_tx_mgmt_subtype);
+		len += scnprintf(buf + len, size - len,
+				 "fw_rx_mgmt_subtype = %s\n",
+				 fw_rx_mgmt_subtype);
+		len += scnprintf(buf + len, size - len,
+				 "scan_fail_dfs_violation_time_ms = %u\n",
+				 pdev_stats->scan_fail_dfs_violation_time_ms);
+		len += scnprintf(buf + len, size - len,
+				 "nol_chk_fail_last_chan_freq = %u\n",
+				 pdev_stats->nol_chk_fail_last_chan_freq);
+		len += scnprintf(buf + len, size - len,
+				 "nol_chk_fail_time_stamp_ms = %u\n",
+				 pdev_stats->nol_chk_fail_time_stamp_ms);
+		len += scnprintf(buf + len, size - len,
+				 "tot_peer_create_cnt = %u\n",
+				 pdev_stats->tot_peer_create_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "tot_peer_del_cnt = %u\n",
+				 pdev_stats->tot_peer_del_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "tot_peer_del_resp_cnt = %u\n",
+				 pdev_stats->tot_peer_del_resp_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "vdev_pause_fail_rt = %u\n",
+				 pdev_stats->vdev_pause_fail_rt);
+
+		if (pdev_stats->req_id == WMI_CTRL_PATH_STATS_REQID_MAX)
+			arvif->ar->wmi_ctrl_path_stats_reqid =
+						WMI_CTRL_PATH_STATS_REQID;
+	}
+
+	ath11k_wmi_ctrl_path_stats_list_free(arvif->ar);
+	mutex_unlock(&arvif->ar->wmi_ctrl_path_stats_lock);
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_val;
+}
+
+static ssize_t ath11k_read_wmi_ctrl_path_stats(struct file *file,
+					       char __user *ubuf,
+					       size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	int ret_val = 0;
+	u32 tagid;
+
+	tagid = arvif->ar->wmi_ctrl_path_stats_tagid;
+
+	switch (tagid) {
+	case WMI_TAG_CTRL_PATH_PDEV_STATS:
+		ret_val = ath11k_read_wmi_ctrl_path_pdev_stats(arvif, ubuf, count, ppos);
+		break;
+	/* Add case for newly wmi ctrl path added stats here */
+	default:
+		/* Unsupported tag */
+		break;
+	}
+
+	return ret_val;
+}
+
+static const struct file_operations ath11k_fops_wmi_ctrl_stats = {
+	.write = ath11k_write_wmi_ctrl_path_stats,
+	.open = simple_open,
+	.read = ath11k_read_wmi_ctrl_path_stats,
+};
+
+static void ath11k_wmi_ctrl_stats_init(struct ath11k_vif *arvif)
+{
+	debugfs_create_file("wmi_ctrl_stats", 0600,
+			    arvif->vif->debugfs_dir, arvif,
+			    &ath11k_fops_wmi_ctrl_stats);
+	INIT_LIST_HEAD(&arvif->ar->wmi_ctrl_path_stats_list);
+	mutex_init(&arvif->ar->wmi_ctrl_path_stats_lock);
+	init_completion(&arvif->ar->wmi_ctrl_path_stats_rcvd);
+	arvif->ar->wmi_ctrl_path_stats_more_enabled = false;
+	arvif->ar->wmi_ctrl_path_stats_reqid = WMI_CTRL_PATH_STATS_REQID;
+}
+
 int ath11k_debugfs_add_interface(struct ath11k_vif *arvif)
 {
 	if (arvif->vif->type == NL80211_IFTYPE_AP && !arvif->debugfs_twt) {
@@ -1663,6 +1815,10 @@ int ath11k_debugfs_add_interface(struct ath11k_vif *arvif)
 		debugfs_create_file("resume_dialog", 0200, arvif->debugfs_twt,
 				    arvif, &ath11k_fops_twt_resume_dialog);
 	}
+	if (test_bit(WMI_TLV_REQUEST_CTRL_PATH_STATS_REQUEST,
+		     arvif->ar->ab->wmi_ab.svc_map))
+		ath11k_wmi_ctrl_stats_init(arvif);
+
 	return 0;
 }
 
