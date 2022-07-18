@@ -31,7 +31,6 @@
  */
 
 #include <net/tc_act/tc_gact.h>
-#include <net/pkt_cls.h>
 #include <linux/mlx5/fs.h>
 #include <net/vxlan.h>
 #include <net/geneve.h>
@@ -64,6 +63,7 @@
 #include "en/devlink.h"
 #include "lib/mlx5.h"
 #include "en/ptp.h"
+#include "en/htb.h"
 #include "qos.h"
 #include "en/trap.h"
 
@@ -2383,9 +2383,11 @@ int mlx5e_open_channels(struct mlx5e_priv *priv,
 			goto err_close_channels;
 	}
 
-	err = mlx5e_qos_open_queues(priv, chs);
-	if (err)
-		goto err_close_ptp;
+	if (priv->htb) {
+		err = mlx5e_qos_open_queues(priv, chs);
+		if (err)
+			goto err_close_ptp;
+	}
 
 	mlx5e_health_channels_update(priv);
 	kvfree(cparam);
@@ -2567,9 +2569,11 @@ static int mlx5e_netdev_set_tcs(struct net_device *netdev, u16 nch, u8 ntc,
 
 int mlx5e_update_tx_netdev_queues(struct mlx5e_priv *priv)
 {
-	int qos_queues, nch, ntc, num_txqs, err;
+	int nch, ntc, num_txqs, err;
+	int qos_queues = 0;
 
-	qos_queues = mlx5e_qos_cur_leaf_nodes(priv);
+	if (priv->htb)
+		qos_queues = mlx5e_htb_cur_leaf_nodes(priv->htb);
 
 	nch = priv->channels.params.num_channels;
 	ntc = mlx5e_get_dcb_num_tc(&priv->channels.params);
@@ -2724,7 +2728,8 @@ void mlx5e_activate_priv_channels(struct mlx5e_priv *priv)
 {
 	mlx5e_build_txq_maps(priv);
 	mlx5e_activate_channels(&priv->channels);
-	mlx5e_qos_activate_queues(priv);
+	if (priv->htb)
+		mlx5e_qos_activate_queues(priv);
 	mlx5e_xdp_tx_enable(priv);
 
 	/* dev_watchdog() wants all TX queues to be started when the carrier is
@@ -2841,7 +2846,7 @@ int mlx5e_safe_switch_params(struct mlx5e_priv *priv,
 
 	new_chs.params = *params;
 
-	mlx5e_selq_prepare(&priv->selq, &new_chs.params, !!priv->htb.maj_id);
+	mlx5e_selq_prepare_params(&priv->selq, &new_chs.params);
 
 	err = mlx5e_open_channels(priv, &new_chs);
 	if (err)
@@ -2897,7 +2902,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	int err;
 
-	mlx5e_selq_prepare(&priv->selq, &priv->channels.params, !!priv->htb.maj_id);
+	mlx5e_selq_prepare_params(&priv->selq, &priv->channels.params);
 
 	set_bit(MLX5E_STATE_OPENED, &priv->state);
 
@@ -3356,7 +3361,7 @@ static int mlx5e_setup_tc_mqprio(struct mlx5e_priv *priv,
 	/* MQPRIO is another toplevel qdisc that can't be attached
 	 * simultaneously with the offloaded HTB.
 	 */
-	if (WARN_ON(priv->htb.maj_id))
+	if (WARN_ON(mlx5e_selq_is_htb_enabled(&priv->selq)))
 		return -EINVAL;
 
 	switch (mqprio->mode) {
@@ -3364,47 +3369,6 @@ static int mlx5e_setup_tc_mqprio(struct mlx5e_priv *priv,
 		return mlx5e_setup_tc_mqprio_dcb(priv, &mqprio->qopt);
 	case TC_MQPRIO_MODE_CHANNEL:
 		return mlx5e_setup_tc_mqprio_channel(priv, mqprio);
-	default:
-		return -EOPNOTSUPP;
-	}
-}
-
-static int mlx5e_setup_tc_htb(struct mlx5e_priv *priv, struct tc_htb_qopt_offload *htb)
-{
-	int res;
-
-	switch (htb->command) {
-	case TC_HTB_CREATE:
-		return mlx5e_htb_root_add(priv, htb->parent_classid, htb->classid,
-					  htb->extack);
-	case TC_HTB_DESTROY:
-		return mlx5e_htb_root_del(priv);
-	case TC_HTB_LEAF_ALLOC_QUEUE:
-		res = mlx5e_htb_leaf_alloc_queue(priv, htb->classid, htb->parent_classid,
-						 htb->rate, htb->ceil, htb->extack);
-		if (res < 0)
-			return res;
-		htb->qid = res;
-		return 0;
-	case TC_HTB_LEAF_TO_INNER:
-		return mlx5e_htb_leaf_to_inner(priv, htb->parent_classid, htb->classid,
-					       htb->rate, htb->ceil, htb->extack);
-	case TC_HTB_LEAF_DEL:
-		return mlx5e_htb_leaf_del(priv, &htb->classid, htb->extack);
-	case TC_HTB_LEAF_DEL_LAST:
-	case TC_HTB_LEAF_DEL_LAST_FORCE:
-		return mlx5e_htb_leaf_del_last(priv, htb->classid,
-					       htb->command == TC_HTB_LEAF_DEL_LAST_FORCE,
-					       htb->extack);
-	case TC_HTB_NODE_MODIFY:
-		return mlx5e_htb_node_modify(priv, htb->classid, htb->rate, htb->ceil,
-					     htb->extack);
-	case TC_HTB_LEAF_QUERY_QUEUE:
-		res = mlx5e_get_txq_by_classid(priv, htb->classid);
-		if (res < 0)
-			return res;
-		htb->qid = res;
-		return 0;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -3443,7 +3407,7 @@ static int mlx5e_setup_tc(struct net_device *dev, enum tc_setup_type type,
 		return err;
 	case TC_SETUP_QDISC_HTB:
 		mutex_lock(&priv->state_lock);
-		err = mlx5e_setup_tc_htb(priv, type_data);
+		err = mlx5e_htb_setup_tc(priv, type_data);
 		mutex_unlock(&priv->state_lock);
 		return err;
 	default:
@@ -3663,6 +3627,7 @@ static int set_feature_cvlan_filter(struct net_device *netdev, bool enable)
 static int set_feature_hw_tc(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int err = 0;
 
 #if IS_ENABLED(CONFIG_MLX5_CLS_ACT)
 	if (!enable && mlx5e_tc_num_filters(priv, MLX5_TC_FLAG(NIC_OFFLOAD))) {
@@ -3672,12 +3637,14 @@ static int set_feature_hw_tc(struct net_device *netdev, bool enable)
 	}
 #endif
 
-	if (!enable && priv->htb.maj_id) {
+	mutex_lock(&priv->state_lock);
+	if (!enable && mlx5e_selq_is_htb_enabled(&priv->selq)) {
 		netdev_err(netdev, "Active HTB offload, can't turn hw_tc_offload off\n");
-		return -EINVAL;
+		err = -EINVAL;
 	}
+	mutex_unlock(&priv->state_lock);
 
-	return 0;
+	return err;
 }
 
 static int set_feature_rx_all(struct net_device *netdev, bool enable)
@@ -5285,7 +5252,6 @@ int mlx5e_priv_init(struct mlx5e_priv *priv,
 	if (err)
 		goto err_free_cpumask;
 
-	hash_init(priv->htb.qos_tc2node);
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
 	INIT_WORK(&priv->tx_timeout_work, mlx5e_tx_timeout_work);
@@ -5342,9 +5308,9 @@ void mlx5e_priv_cleanup(struct mlx5e_priv *priv)
 	mutex_unlock(&priv->state_lock);
 	free_cpumask_var(priv->scratchpad.cpumask);
 
-	for (i = 0; i < priv->htb.max_qos_sqs; i++)
-		kfree(priv->htb.qos_sq_stats[i]);
-	kvfree(priv->htb.qos_sq_stats);
+	for (i = 0; i < priv->htb_max_qos_sqs; i++)
+		kfree(priv->htb_qos_sq_stats[i]);
+	kvfree(priv->htb_qos_sq_stats);
 
 	if (priv->mqprio_rl) {
 		mlx5e_mqprio_rl_cleanup(priv->mqprio_rl);

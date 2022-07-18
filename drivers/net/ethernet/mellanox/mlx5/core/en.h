@@ -898,16 +898,8 @@ struct mlx5e_scratchpad {
 	cpumask_var_t cpumask;
 };
 
-struct mlx5e_htb {
-	DECLARE_HASHTABLE(qos_tc2node, order_base_2(MLX5E_QOS_MAX_LEAF_NODES));
-	DECLARE_BITMAP(qos_used_qids, MLX5E_QOS_MAX_LEAF_NODES);
-	struct mlx5e_sq_stats **qos_sq_stats;
-	u16 max_qos_sqs;
-	u16 maj_id;
-	u16 defcls;
-};
-
 struct mlx5e_trap;
+struct mlx5e_htb;
 
 struct mlx5e_priv {
 	/* priv data path fields - start */
@@ -945,6 +937,8 @@ struct mlx5e_priv {
 	struct mlx5e_channel_stats **channel_stats;
 	struct mlx5e_channel_stats trap_stats;
 	struct mlx5e_ptp_stats     ptp_stats;
+	struct mlx5e_sq_stats      **htb_qos_sq_stats;
+	u16                        htb_max_qos_sqs;
 	u16                        stats_nch;
 	u16                        max_nch;
 	u8                         max_opened_tc;
@@ -976,7 +970,7 @@ struct mlx5e_priv {
 	struct mlx5e_hv_vhca_stats_agent stats_agent;
 #endif
 	struct mlx5e_scratchpad    scratchpad;
-	struct mlx5e_htb           htb;
+	struct mlx5e_htb          *htb;
 	struct mlx5e_mqprio_rl    *mqprio_rl;
 };
 
