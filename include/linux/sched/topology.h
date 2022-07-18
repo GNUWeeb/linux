@@ -61,6 +61,8 @@ static inline int cpu_numa_flags(void)
 {
 	return SD_NUMA;
 }
+
+int sched_numa_find_closest(const struct cpumask *cpus, int cpu);
 #endif
 
 extern int arch_asym_cpu_priority(int cpu);
