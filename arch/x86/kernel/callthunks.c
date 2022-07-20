@@ -4,6 +4,7 @@
 
 #include <linux/btree.h>
 #include <linux/debugfs.h>
+#include <linux/kallsyms.h>
 #include <linux/memory.h>
 #include <linux/moduleloader.h>
 #include <linux/set_memory.h>
@@ -554,6 +555,160 @@ void *callthunks_translate_call_dest(void *dest)
 	WARN_ON_ONCE(!is_kernel_inittext((unsigned long)dest) &&
 		     !is_module_init_dest(dest));
 	return dest;
+}
+
+static bool is_module_callthunk(void *addr)
+{
+	bool ret = false;
+
+#ifdef CONFIG_MODULES
+	struct module *mod;
+
+	preempt_disable();
+	mod = __module_address((unsigned long)addr);
+	if (mod && within_module_thunk((unsigned long)addr, mod))
+		ret = true;
+	preempt_enable();
+#endif
+	return ret;
+}
+
+static bool is_callthunk(void *addr)
+{
+	if (builtin_layout.base <= addr &&
+	    addr < builtin_layout.base + builtin_layout.size)
+		return true;
+	return is_module_callthunk(addr);
+}
+
+static void *__callthunk_dest(void *addr)
+{
+	unsigned long mask = callthunk_desc.thunk_size - 1;
+	void *thunk;
+
+	thunk = (void *)((unsigned long)addr & ~mask);
+	thunk += callthunk_desc.template_size;
+	return jump_get_dest(thunk);
+}
+
+static void *callthunk_dest(void *addr)
+{
+	if (!is_callthunk(addr))
+		return NULL;
+	return __callthunk_dest(addr);
+}
+
+static void set_modname(char **modname, unsigned long addr)
+{
+	if (!modname || !IS_ENABLED(CONFIG_MODULES))
+		*modname = "callthunk";
+
+#ifdef CONFIG_MODULES
+	else {
+		struct module * mod;
+
+		preempt_disable();
+		mod = __module_address(addr);
+		*modname = mod->callthunk_name;
+		preempt_enable();
+	}
+#endif
+}
+
+const char *
+callthunk_address_lookup(unsigned long addr, unsigned long *size,
+			 unsigned long *off, char **modname, char *sym)
+{
+	unsigned long dest, mask = callthunk_desc.thunk_size - 1;
+	const char *ret;
+
+	if (!thunks_initialized)
+		return NULL;
+
+	dest = (unsigned long)callthunk_dest((void *)addr);
+	if (!dest)
+		return NULL;
+
+	ret = kallsyms_lookup(dest, size, off, modname, sym);
+	if (!ret)
+		return NULL;
+
+	*off = addr & mask;
+	*size = callthunk_desc.thunk_size;
+
+	set_modname(modname, addr);
+	return ret;
+}
+
+static int get_module_thunk(char **modname, struct module_layout **layoutp,
+			    unsigned int symthunk)
+{
+#ifdef CONFIG_MODULES
+	extern struct list_head modules;
+	struct module *mod;
+	unsigned int size;
+
+	symthunk -= (*layoutp)->text_size;
+	list_for_each_entry_rcu(mod, &modules, list) {
+		if (mod->state == MODULE_STATE_UNFORMED)
+			continue;
+
+		*layoutp = &mod->thunk_layout;
+		size = mod->thunk_layout.text_size;
+
+		if (symthunk >= size) {
+			symthunk -= size;
+			continue;
+		}
+		*modname = mod->callthunk_name;
+		return symthunk;
+	}
+#endif
+	return -ERANGE;
+}
+
+int callthunk_get_kallsym(unsigned int symnum, unsigned long *value,
+			  char *type, char *name, char *module_name,
+			  int *exported)
+{
+	int symthunk = symnum * callthunk_desc.thunk_size;
+	struct module_layout *layout = &builtin_layout;
+	char *modname = "callthunk";
+	void *thunk, *dest;
+	int ret = -ERANGE;
+
+	if (!thunks_initialized)
+		return -ERANGE;
+
+	preempt_disable();
+
+	if (symthunk >= layout->text_size) {
+		symthunk = get_module_thunk(&modname, &layout, symthunk);
+		if (symthunk < 0)
+			goto out;
+	}
+
+	thunk = layout->base + symthunk;
+	dest = __callthunk_dest(thunk);
+
+	if (!dest) {
+		strlcpy(name, "(unknown callthunk)", KSYM_NAME_LEN);
+		ret = 0;
+		goto out;
+	}
+
+	ret = lookup_symbol_name((unsigned long)dest, name);
+	if (ret)
+		goto out;
+
+	*value = (unsigned long)thunk;
+	*exported = 0;
+	*type = 't';
+	strlcpy(module_name, modname, MODULE_NAME_LEN);
+
+out:
+	preempt_enable();
+	return ret;
 }
 
 #ifdef CONFIG_MODULES

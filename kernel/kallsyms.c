@@ -365,6 +365,10 @@ static const char *kallsyms_lookup_buildid(unsigned long addr,
 		ret = ftrace_mod_address_lookup(addr, symbolsize,
 						offset, modname, namebuf);
 
+	if (!ret)
+		ret = callthunk_address_lookup(addr, symbolsize,
+					       offset, modname, namebuf);
+
 found:
 	cleanup_symbol_name(namebuf);
 	return ret;
@@ -578,6 +582,7 @@ struct kallsym_iter {
 	loff_t pos_mod_end;
 	loff_t pos_ftrace_mod_end;
 	loff_t pos_bpf_end;
+	loff_t pos_callthunk_end;
 	unsigned long value;
 	unsigned int nameoff; /* If iterating in core kernel symbols. */
 	char type;
@@ -657,6 +662,20 @@ static int get_ksymbol_bpf(struct kallsym_iter *iter)
 	return 1;
 }
 
+static int get_ksymbol_callthunk(struct kallsym_iter *iter)
+{
+	int ret = callthunk_get_kallsym(iter->pos - iter->pos_bpf_end,
+					&iter->value, &iter->type,
+					iter->name, iter->module_name,
+					&iter->exported);
+	if (ret < 0) {
+		iter->pos_callthunk_end = iter->pos;
+		return 0;
+	}
+
+	return 1;
+}
+
 /*
  * This uses "__builtin__kprobes" as a module name for symbols for pages
  * allocated for kprobes' purposes, even though "__builtin__kprobes" is not a
@@ -722,6 +741,10 @@ static int update_iter_mod(struct kallsym_iter *iter, loff_t pos)
 
 	if ((!iter->pos_bpf_end || iter->pos_bpf_end > pos) &&
 	    get_ksymbol_bpf(iter))
+		return 1;
+
+	if ((!iter->pos_callthunk_end || iter->pos_callthunk_end > pos) &&
+	    get_ksymbol_callthunk(iter))
 		return 1;
 
 	return get_ksymbol_kprobe(iter);

@@ -65,6 +65,30 @@ static inline void *dereference_symbol_descriptor(void *ptr)
 	return ptr;
 }
 
+#ifdef CONFIG_CALL_THUNKS
+extern const char *
+callthunk_address_lookup(unsigned long addr, unsigned long *size,
+			 unsigned long *off, char **modname, char *sym);
+extern int callthunk_get_kallsym(unsigned int symnum, unsigned long *value,
+				 char *type, char *name, char *module_name,
+				 int *exported);
+#else
+static inline const char *
+callthunk_address_lookup(unsigned long addr, unsigned long *size,
+			 unsigned long *off, char **modname, char *sym)
+{
+	return NULL;
+}
+
+static inline
+int callthunk_get_kallsym(unsigned int symnum, unsigned long *value,
+			  char *type, char *name, char *module_name,
+			  int *exported)
+{
+	return -1;
+}
+#endif
+
 #ifdef CONFIG_KALLSYMS
 int kallsyms_on_each_symbol(int (*fn)(void *, const char *, struct module *,
 				      unsigned long),
