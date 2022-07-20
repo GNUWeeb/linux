@@ -3099,23 +3099,28 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 		return NULL;
 	}
 
-	if (vmap_allow_huge && (vm_flags & VM_ALLOW_HUGE_VMAP)) {
-		unsigned long size_per_node;
+	if (vmap_allow_huge && (vm_flags & (VM_HUGE_VMAP|VM_ALLOW_HUGE_VMAP))) {
 
-		/*
-		 * Try huge pages. Only try for PAGE_KERNEL allocations,
-		 * others like modules don't yet expect huge pages in
-		 * their allocations due to apply_to_page_range not
-		 * supporting them.
-		 */
+		if (vm_flags & VM_ALLOW_HUGE_VMAP) {
+			unsigned long size_per_node;
 
-		size_per_node = size;
-		if (node == NUMA_NO_NODE)
-			size_per_node /= num_online_nodes();
-		if (arch_vmap_pmd_supported(prot) && size_per_node >= PMD_SIZE)
+			/*
+			 * Try huge pages. Only try for PAGE_KERNEL allocations,
+			 * others like modules don't yet expect huge pages in
+			 * their allocations due to apply_to_page_range not
+			 * supporting them.
+			 */
+
+			size_per_node = size;
+			if (node == NUMA_NO_NODE)
+				size_per_node /= num_online_nodes();
+			if (arch_vmap_pmd_supported(prot) && size_per_node >= PMD_SIZE)
+				shift = PMD_SHIFT;
+			else
+				shift = arch_vmap_pte_supported_shift(size_per_node);
+		} else {
 			shift = PMD_SHIFT;
-		else
-			shift = arch_vmap_pte_supported_shift(size_per_node);
+		}
 
 		align = max(real_align, 1UL << shift);
 		size = ALIGN(real_size, 1UL << shift);
