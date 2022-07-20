@@ -663,6 +663,7 @@ bool __raw_callee_save___native_vcpu_is_preempted(long cpu);
 	extern typeof(func) __raw_callee_save_##func;			\
 									\
 	asm(".pushsection " section ", \"ax\";"				\
+	    ASM_FUNC_ALIGN						\
 	    ".globl " PV_THUNK_NAME(func) ";"				\
 	    ".type " PV_THUNK_NAME(func) ", @function;"			\
 	    PV_THUNK_NAME(func) ":"					\
