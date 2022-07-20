@@ -7,6 +7,7 @@
 #include <linux/memory.h>
 #include <linux/moduleloader.h>
 #include <linux/set_memory.h>
+#include <linux/static_call.h>
 #include <linux/vmalloc.h>
 
 #include <asm/alternative.h>
@@ -500,6 +501,7 @@ static __init noinline void callthunks_init(struct callthunk_sites *cs)
 	if (WARN_ON_ONCE(ret))
 		return;
 
+	static_call_force_reinit();
 	thunks_initialized = true;
 }
 
@@ -517,6 +519,41 @@ void __init callthunks_patch_builtin_calls(void)
 	mutex_lock(&text_mutex);
 	callthunks_init(&cs);
 	mutex_unlock(&text_mutex);
+}
+
+static bool is_module_init_dest(void *dest)
+{
+	bool ret = false;
+
+#ifdef CONFIG_MODULES
+	struct module *mod;
+
+	preempt_disable();
+	mod = __module_address((unsigned long)dest);
+	if (mod && within_module_init((unsigned long)dest, mod))
+		ret = true;
+	preempt_enable();
+#endif
+	return ret;
+}
+
+void *callthunks_translate_call_dest(void *dest)
+{
+	void *thunk;
+
+	lockdep_assert_held(&text_mutex);
+
+	if (!thunks_initialized || skip_addr(dest))
+		return dest;
+
+	thunk = btree_lookup64(&call_thunks, (unsigned long)dest);
+
+	if (thunk)
+		return thunk;
+
+	WARN_ON_ONCE(!is_kernel_inittext((unsigned long)dest) &&
+		     !is_module_init_dest(dest));
+	return dest;
 }
 
 #ifdef CONFIG_MODULES
