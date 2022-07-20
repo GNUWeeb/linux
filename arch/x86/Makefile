@@ -201,6 +201,10 @@ ifdef CONFIG_SLS
   KBUILD_CFLAGS += -mharden-sls=all
 endif
 
+ifdef CONFIG_CALL_THUNKS_IN_PADDING
+  KBUILD_CFLAGS += -mforce-function-padding=$(CONFIG_FUNCTION_PADDING_ORDER)
+endif
+
 KBUILD_LDFLAGS += -m elf_$(UTS_MACHINE)
 
 ifdef CONFIG_LTO_CLANG

@@ -15,9 +15,13 @@
 #ifdef __ASSEMBLY__
 
 #if CONFIG_FUNCTION_ALIGNMENT == 16
-#define __ALIGN			.p2align 4, 0x90
-#define __ALIGN_STR		__stringify(__ALIGN)
-#define FUNCTION_ALIGNMENT	16
+# define __ALIGN		.p2align 4, 0x90
+# define __ALIGN_STR		__stringify(__ALIGN)
+# define FUNCTION_ALIGNMENT	16
+#elif CONFIG_FUNCTION_ALIGNMENT == 32
+# define __ALIGN		.p2align 5, 0x90
+# define __ALIGN_STR		__stringify(__ALIGN)
+# define FUNCTION_ALIGNMENT	32
 #endif
 
 #if defined(CONFIG_RETHUNK) && !defined(__DISABLE_EXPORTS) && !defined(BUILD_VDSO)
@@ -44,11 +48,32 @@
 
 #endif /* __ASSEMBLY__ */
 
-#if CONFIG_FUNCTION_ALIGNMENT == 16
-# define __FUNC_ALIGN		.p2align 4, 0x90;
-# define ASM_FUNC_ALIGN		".p2align 4, 0x90;"
-# define SYM_F_ALIGN		__FUNC_ALIGN
-#else
+#ifndef _NO_CALLTHUNKS
+#if defined(CONFIG_CALL_THUNKS_IN_PADDING)
+# if CONFIG_FUNCTION_ALIGNMENT == 16
+#  define __FUNC_ALIGN		.p2align 4, 0x90; .skip 16, 0xCC;
+#  define ASM_FUNC_ALIGN	".p2align 4, 0x90; .skip 16, 0xCC;"
+#  define SYM_F_ALIGN		__FUNC_ALIGN
+# elif CONFIG_FUNCTION_ALIGNMENT == 32
+#  define __FUNC_ALIGN		.p2align 5, 0x90; .skip 32, 0xCC;
+#  define ASM_FUNC_ALIGN	".p2align 5, 0x90; .skip 32, 0xCC;"
+#  define SYM_F_ALIGN		__FUNC_ALIGN
+# endif
+#else /* CONFIG_CALL_THUNKS_IN_PADDING */
+# if CONFIG_FUNCTION_ALIGNMENT == 16
+#  define __FUNC_ALIGN		.p2align 4, 0x90;
+#  define ASM_FUNC_ALIGN	".p2align 4, 0x90;"
+#  define SYM_F_ALIGN		__FUNC_ALIGN
+# elif CONFIG_FUNCTION_ALIGNMENT == 32
+#  define __FUNC_ALIGN		.p2align 5, 0x90;
+#  define ASM_FUNC_ALIGN	".p2align 5, 0x90;"
+#  define SYM_F_ALIGN		__FUNC_ALIGN
+# endif
+#endif /* !CONFIG_CALL_THUNKS_IN_PADDING */
+#endif /* !_D_NO_CALLTHUNKS */
+
+#ifndef __FUNC_ALIGN
+# define __FUNC_ALIGN
 # define ASM_FUNC_ALIGN		""
 # define SYM_F_ALIGN		SYM_A_ALIGN
 #endif
